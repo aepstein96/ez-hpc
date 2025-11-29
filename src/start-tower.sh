@@ -1,39 +1,40 @@
 #!/bin/bash
 # ----------------------------------------
 # start_tower_agent.sh
-# Automatically read Nextflow workDir from .config
-# and start the Seqera Tower Agent safely
+# Starts the Seqera Tower Agent using environment variables provided by submit-job
 # ----------------------------------------
 
-# === Source settings ===
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CONFIG_DIR="$(dirname "$SCRIPT_DIR")/config"
-source "$CONFIG_DIR/tower_settings.sh"
-
-# Create the work directory if missing
-if [ -z "$WORK_DIR" ]; then
-    echo "[ERROR] WORK_DIR is not set in the configuration."
+# === Validate Environment Variables ===
+if [ -z "$TOWER_ACCESS_TOKEN" ] || [ -z "$TOWER_CONNECTION_ID" ] || [ -z "$TOWER_WORK_DIR" ] || [ -z "$TOWER_AGENT_BIN" ]; then
+    echo "[ERROR] Missing required Tower configuration."
+    echo "Please ensure TOWER_ACCESS_TOKEN, TOWER_CONNECTION_ID, TOWER_WORK_DIR, and TOWER_AGENT_BIN are set in your config."
     exit 1
 fi
-mkdir -p "$WORK_DIR"
 
-# Optional: create a log directory nearby
-LOG_DIR="$SCRIPT_DIR/sbatch_logs"
+# Create the work directory if missing
+mkdir -p "$TOWER_WORK_DIR"
+
+# Optional: create a log directory nearby (or use current directory's logs)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="$SCRIPT_DIR/../sbatch_logs" # Use standard log dir
 mkdir -p "$LOG_DIR"
 
 # === Download agent if missing ===
-if [ ! -x "$AGENT_BIN" ]; then
-    echo "[INFO] Downloading Tower Agent binary..."
-    mkdir -p "$(dirname "$AGENT_BIN")"
-    curl -fsSL https://github.com/seqeralabs/tower-agent/releases/latest/download/tw-agent-linux-x86_64 -o "$AGENT_BIN"
-    chmod +x "$AGENT_BIN"
+if [ ! -x "$TOWER_AGENT_BIN" ]; then
+    echo "[INFO] Downloading Tower Agent binary to $TOWER_AGENT_BIN..."
+    mkdir -p "$(dirname "$TOWER_AGENT_BIN")"
+    curl -fsSL https://github.com/seqeralabs/tower-agent/releases/latest/download/tw-agent-linux-x86_64 -o "$TOWER_AGENT_BIN"
+    chmod +x "$TOWER_AGENT_BIN"
 fi
 
 # === Start agent in the foreground ===
 echo "[INFO] Launching Tower Agent..."
 export TOWER_AGENT_LOG_FILE="$LOG_DIR/tower_agent.log"
-TOWER_ACCESS_TOKEN=$TOWER_ACCESS_TOKEN $AGENT_BIN --work-dir "$WORK_DIR" "$CONNECTION_ID" &
+
+# Note: We export TOWER_ACCESS_TOKEN already in submit-job, so it's available to the binary
+$TOWER_AGENT_BIN --work-dir "$TOWER_WORK_DIR" "$TOWER_CONNECTION_ID" &
 AGENT_PID=$!
+
 echo "[INFO] Tower Agent started with PID $AGENT_PID"
 echo "[INFO] Agent log: $TOWER_AGENT_LOG_FILE"
 

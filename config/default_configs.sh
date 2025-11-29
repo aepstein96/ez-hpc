@@ -20,7 +20,11 @@ EXECUTION_COMMANDS[nf]="nextflow run"
 JUPYTER_CONDA_ENV="jupyter"
 JUPYTER_ROOT_DIR="$HOME"
 
-# Everything below here MUST be customized by the user.
+# --- Nextflow Tower Settings ---
+TOWER_ACCESS_TOKEN=""
+TOWER_CONNECTION_ID=""
+TOWER_WORK_DIR="$HOME/nextflow/work"
+TOWER_AGENT_BIN="$HOME/tw-agent"
 
 # --- SBATCH Defaults (Base) ---
 # Applied to every job unless overridden
@@ -38,12 +42,14 @@ PROFILES[cpu]="cpus-per-task=16"
 PROFILES[gpu]="cpus-per-task=4 gpus=a10:1"
 PROFILES[big_mem]="mem=256G"
 PROFILES[long_run]="time=48:00:00"
-PROFILES[lab_account]="account=LAB_ACCOUNT_NAME"
+PROFILES[cao_account]="account=cao_condo_bank"
 
 # --- Partition Rules ---
 # Automatically apply profiles based on partition name (glob patterns allowed)
 # Format: "profile1 profile2" or "profile1,profile2"
 # Multiple profiles are applied in order.
 declare -A PARTITION_RULES
-PARTITION_RULES["lab_node*"]="lab_account"
-PARTITION_RULES["*a100*"]="gpu"
+PARTITION_RULES["cao*"]="cao_account"
+PARTITION_RULES["*a10*"]="gpu"
+PARTITION_RULES["*v100*"]="gpu"
+PARTITION_RULES["*l40*"]="gpu"

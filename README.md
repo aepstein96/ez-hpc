@@ -65,6 +65,13 @@ Once running, get the connection URL:
 get-jupyter-url
 ```
 
+### Launch Nextflow Tower Agent
+Start a specific Nextflow Tower (Seqera Platform) agent on a compute node.
+```bash
+submit-job --nf-tower --partition=general
+```
+*Requires Tower configuration in `config/user_configs.sh`.*
+
 ### Pass Arguments
 Pass arguments to your script.
 ```bash
@@ -76,3 +83,4 @@ The configuration is a standard Bash script located at `config/user_configs.sh`.
 - **SBATCH_DEFAULTS**: Default memory, time, etc.
 - **PROFILES**: Named sets of parameters (e.g., `gpu="gpus=1 cpus-per-task=4"`).
 - **PARTITION_RULES**: Automatically apply profiles based on partition name patterns (e.g., `*gpu*` -> `gpu`).
+- **TOWER_SETTINGS**: Set `TOWER_ACCESS_TOKEN`, `TOWER_CONNECTION_ID`, etc. for Seqera Platform integration.
