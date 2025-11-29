@@ -2,6 +2,8 @@
 
 **ez-hpc** is a collection of robust, portable Bash scripts to streamline job submission and Jupyter Lab management on SLURM clusters. It provides intelligent defaults, partition-based profiles, and easy Jupyter integration without requiring complex Python dependencies.
 
+Most of this code was written using AI, albeit with significant human input and guidance.
+
 ## Features
 - **Smart Defaults**: Automatically detects file types (.py, .R, .sh, .nf) and applies appropriate submission commands.
 - **Profile Management**: Define named profiles (e.g., `gpu`, `big_mem`) in a simple Bash config file.
@@ -17,28 +19,27 @@ git clone https://github.com/yourusername/ez-hpc.git
 cd ez-hpc
 ```
 
-### 2. Customize Configuration
-Copy the default configuration to a user-specific file. This file is ignored by git, so your custom settings (accounts, partition names) will be safe from updates.
-```bash
-cp config/default_configs.sh config/user_configs.sh
-```
-Edit `config/user_configs.sh` to set your cluster's specific defaults.
+### 2. Setup
 
-### 3. Add to Path
-Add the `src` directory to your `$PATH` in your `.bashrc` file so you can run the scripts from anywhere.
+The included script sets up your configuration, adds the tools to your path, and optionally creates the Jupyter environment.
+Note: if you have a config file somewhere on your server you'd like to use, copy it first as follows:
 ```bash
-echo 'export PATH="$PATH:$HOME/ez-hpc/src"' >> ~/.bashrc
-source ~/.bashrc
+cp PATH/TO/YOUR/CONFIG/FILE config/user_configs.sh
 ```
-*(Note: Adjust the path `$HOME/ez-hpc/src` if you cloned the repo somewhere else.)*
 
-### 4. Set up Jupyter Environment (Optional)
-To use the Jupyter features, create a compatible environment using the provided files in `jupyter_env`.
+If you don't have one already, don't worry, as the script will use the default one which you will later edit and customize.
 
-**Using Conda (Recommended):**
+Next, run the installation script:
 ```bash
-conda env create -f jupyter_env/environment.yml
+./install.sh
 ```
+Follow the on-screen prompts.
+
+### Manual Installation (Alternative)
+If you prefer to set things up manually:
+1.  **Config**: `cp config/default_configs.sh config/user_configs.sh`
+2.  **Path**: Add `export PATH="$PATH:$HOME/ez-hpc/src"` to your `.bashrc`.
+3.  **Jupyter**: `conda env create -f jupyter_env/environment.yml`
 
 ## Usage
 
