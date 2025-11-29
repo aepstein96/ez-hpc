@@ -58,7 +58,7 @@ submit-job --script analysis.R --partition=YOUR_PARTITION --profiles "big_mem"
 ### Launch Jupyter Lab
 Start a Jupyter Lab instance on a compute node.
 ```bash
-submit-job --jupyter --partition=gpu_partition
+submit-job --jupyter --partition=YOUR_PARTITION
 ```
 Once running, get the connection URL:
 ```bash
