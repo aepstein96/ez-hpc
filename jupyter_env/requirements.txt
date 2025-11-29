@@ -1,0 +1,4 @@
+jupyterlab
+jupyter_server
+jupyter-server-proxy
+nb_conda_kernels

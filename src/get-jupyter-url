@@ -1,0 +1,40 @@
+#!/bin/bash
+
+# Get Jupyter job information and display connection details
+
+# Find the jupyter_lab job
+JOBID=$(squeue -u $USER -n jupyter_lab -h -o %i)
+
+if [ -z "$JOBID" ]; then
+    echo "No jupyter_lab job found for user $USER"
+    echo "Run 'submit-job --jupyter' to start a Jupyter session"
+    exit 1
+fi
+
+# Get job details
+JOB_INFO=$(scontrol show job $JOBID)
+NODE=$(echo "$JOB_INFO" | grep "^   NodeList=" | sed 's/.*NodeList=//' | tr -d '\n')
+URL=$(echo "$JOB_INFO" | grep Comment | sed 's/.*JUPYTER_URL://')
+
+if [ -z "$URL" ]; then
+    echo "Jupyter job $JOBID is running on node $NODE but URL not yet available"
+    echo "The job may still be starting up. Wait a moment and try again."
+    exit 1
+fi
+
+echo "======================================================"
+echo "         JUPYTER LAB CONNECTION INFO"
+echo "======================================================"
+echo "Job ID: $JOBID"
+echo "Node:   $NODE"
+echo "URL:    $URL"
+echo ""
+echo "TO CONNECT FROM VS CODE / CURSOR:"
+echo "1. Open a .ipynb notebook file"
+echo "2. Click 'Select Kernel' (top right)"
+echo "3. Choose 'Existing Jupyter Server'"
+echo "4. Enter this URL: $URL"
+echo ""
+echo "TO CONNECT FROM BROWSER:"
+echo "Open the URL directly in your browser"
+echo "======================================================"

@@ -1,0 +1,305 @@
+#!/bin/bash
+
+# Help function
+show_help() {
+    cat << 'EOF'
+submit-job - Submit SLURM batch jobs using a Bash configuration file.
+
+USAGE:
+    submit-job [OPTIONS]
+
+MODES:
+    submit-job --jupyter             Start a Jupyter Lab job
+    submit-job --script path/to/script.py [--args "script arguments"]
+
+OPTIONS:
+    --script PATH                    Path to the script to execute (required unless --jupyter)
+    --jupyter                        Start a Jupyter Lab job (uses launch-jupyter.sh)
+    --profiles "p1,p2"               Comma or space-separated list of configuration profiles
+    --args "ARGUMENTS"               Arguments to pass to the script
+    --name NAME                      Custom job name (default: auto-generated from script name)
+    --env ENV_NAME                   Conda environment to activate (overrides config default)
+    --log_folder PATH                Custom log folder (overrides config default)
+    --submit_from NODE               Submit job from specific node (e.g., login04)
+    
+SBATCH PARAMETERS:
+    Any sbatch parameter can be specified and will override any defaults or profiles.
+    --partition=PARTITION            SLURM partition (REQUIRED)
+    --cpus-per-task=N                Number of CPUs
+    --mem=SIZE                       Memory allocation (e.g., 64G)
+    --time=TIME                      Time limit (e.g., 24:00:00)
+    --gpus=TYPE:COUNT                GPU allocation (e.g., a10:1)
+
+EXAMPLES:
+    # Start Jupyter Lab on a GPU partition
+    submit-job --jupyter --partition=hpc_a10_a
+
+    # Run a Python script on a CPU partition
+    submit-job --script my_analysis.py --partition=hpc
+
+    # Run a script with a specific profile and custom name
+    submit-job --script process.py --partition=cao_bigmem --profiles "long_run" --name "long_process"
+    
+    # Override a profile setting with a command-line argument
+    submit-job --script train.py --partition=hpc_a10_a --profiles "gpu" --gpus="a10:2"
+
+CONFIG:
+    This script is configured using 'config/submit_job_config.sh'.
+    It does NOT require 'jq'.
+EOF
+}
+
+# --- Configuration and Setup ---
+SCRIPT_DIR="$(dirname "$(realpath "${BASH_SOURCE[0]}")")"
+
+# 1. Look for user-level config first (ignored by git)
+USER_CONFIG="$SCRIPT_DIR/../config/user_configs.sh"
+DEFAULT_CONFIG="$SCRIPT_DIR/../config/default_configs.sh"
+
+if [ -f "$USER_CONFIG" ]; then
+    source "$USER_CONFIG"
+    echo "Loaded user configuration from $USER_CONFIG"
+elif [ -f "$DEFAULT_CONFIG" ]; then
+    source "$DEFAULT_CONFIG"
+    echo "Loaded default configuration from $DEFAULT_CONFIG"
+else
+    echo "Error: No configuration file found at $USER_CONFIG or $DEFAULT_CONFIG" >&2
+    echo "Please ensure config/default_configs.sh exists." >&2
+    exit 1
+fi
+
+# --- Initialize Variables ---
+USER_SCRIPT_PATH=""
+USER_SCRIPT_ARGS=""
+USER_SPECIFIED_NAME=""
+USER_SPECIFIED_PROFILES=""
+USER_REQUESTED_JUPYTER=false
+DRY_RUN=false
+SUBMIT_FROM=""
+
+declare -A USER_PARAMS # Stores sbatch parameters from user via --option=value
+SBATCH_MISC_FLAGS=()    # Stores sbatch flags like --requeue
+
+# --- Parse Command Line Arguments ---
+while [[ $# -gt 0 ]]; do
+    case $1 in
+        --help|-h) show_help; exit 0 ;;
+        --dry-run) DRY_RUN=true; shift ;;
+        --script) USER_SCRIPT_PATH="$(realpath "$2")"; shift 2 ;;
+        --jupyter) USER_REQUESTED_JUPYTER=true; shift ;;
+        --args|--args=*)
+            if [[ $1 == *"="* ]]; then USER_SCRIPT_ARGS="${1#*=}"; shift; else USER_SCRIPT_ARGS="$2"; shift 2; fi ;;
+        --name|--name=*)
+            if [[ $1 == *"="* ]]; then USER_SPECIFIED_NAME="${1#*=}"; shift; else USER_SPECIFIED_NAME="$2"; shift 2; fi ;;
+        --profiles|--profiles=*)
+            if [[ $1 == *"="* ]]; then USER_SPECIFIED_PROFILES="${1#*=}"; shift; else USER_SPECIFIED_PROFILES="$2"; shift 2; fi ;;
+        --env|--env=*)
+            if [[ $1 == *"="* ]]; then ENV="${1#*=}"; shift; else ENV="$2"; shift 2; fi ;;
+        --log_folder|--log_folder=*)
+            if [[ $1 == *"="* ]]; then LOG_FOLDER="${1#*=}"; shift; else LOG_FOLDER="$2"; shift 2; fi ;;
+        --submit_from|--submit_from=*)
+            if [[ $1 == *"="* ]]; then SUBMIT_FROM="${1#*=}"; shift; else SUBMIT_FROM="$2"; shift 2; fi ;;
+        *)
+            if [[ $1 == --* ]]; then
+                # Handle generic --key=value
+                if [[ $1 == *"="* ]]; then
+                    param_name="${1%%=*}"        # Get key (e.g. --partition)
+                    param_name="${param_name:2}" # Remove --
+                    param_name="${param_name//-/_}" # Normalize to underscores
+                    val="${1#*=}"
+                    USER_PARAMS[$param_name]="$val"
+                    shift
+                # Handle generic --key value
+                elif [[ $# -gt 1 && $2 != --* ]]; then
+                    param_name="${1:2}"
+                    param_name="${param_name//-/_}"
+                    USER_PARAMS[$param_name]="$2"
+                    shift 2
+                else
+                    SBATCH_MISC_FLAGS+=("$1"); shift
+                fi
+            else
+                echo "Warning: Unrecognized argument '$1' will be ignored." >&2; shift
+            fi ;;
+    esac
+done
+
+# --- Validate Arguments ---
+if [[ -z "${USER_PARAMS[partition]:-}" ]]; then
+    echo "Error: --partition must be specified." >&2; exit 1
+fi
+if [ "$USER_REQUESTED_JUPYTER" = false ] && [ -z "$USER_SCRIPT_PATH" ]; then
+    echo "Error: --script must be specified if not running in --jupyter mode." >&2; exit 1
+fi
+
+# --- Load Configuration and Apply Layers ---
+declare -A SBATCH_PARAMS
+
+# Layer 1: Apply sbatch_defaults from Bash Config
+echo "Applying base sbatch defaults from config..."
+for key in "${!SBATCH_DEFAULTS[@]}"; do
+    sbatch_key="${key//-/_}"
+    SBATCH_PARAMS[$sbatch_key]="${SBATCH_DEFAULTS[$key]}"
+done
+
+# Layer 2: Apply profiles based on partition pattern
+echo "Checking for partition-specific profiles for '${USER_PARAMS[partition]}'..."
+USER_PARTITION="${USER_PARAMS[partition]}"
+PARTITION_PROFILES_STR=""
+
+for pattern in "${!PARTITION_RULES[@]}"; do
+    # Use glob matching
+    if [[ $USER_PARTITION == $pattern ]]; then
+        # Found a match. The value might be "profile1 profile2" or "profile1,profile2"
+        # Convert commas to spaces for consistent handling
+        clean_profiles="${PARTITION_RULES[$pattern]//,/ }"
+        PARTITION_PROFILES_STR="$PARTITION_PROFILES_STR $clean_profiles"
+    fi
+done
+
+# Layer 3: Apply profiles from --profiles argument
+echo "Checking for user-specified profiles..."
+# Convert commas to spaces
+USER_PROFILES_STR="${USER_SPECIFIED_PROFILES//,/ }"
+
+# Combine all profiles into one list
+ALL_PROFILES_STR="$PARTITION_PROFILES_STR $USER_PROFILES_STR"
+
+# Apply profiles in order
+for profile in $ALL_PROFILES_STR; do
+    if [[ -n "${PROFILES[$profile]}" ]]; then
+        echo "Applying profile: $profile"
+        # The profile value is a string like "key=val key2=val2"
+        for kv in ${PROFILES[$profile]}; do
+            k="${kv%%=*}"
+            v="${kv#*=}"
+            sbatch_key="${k//-/_}"
+            SBATCH_PARAMS[$sbatch_key]="$v"
+            echo "  -> $sbatch_key = $v"
+        done
+    else
+        echo "Warning: Profile '$profile' not found in configuration."
+    fi
+done
+
+# Layer 4: Apply user-specified sbatch parameters from command line (highest precedence)
+if [ ${#USER_PARAMS[@]} -gt 0 ]; then
+    echo "Applying user-specified sbatch parameters from command line..."
+    for key in "${!USER_PARAMS[@]}"; do 
+        SBATCH_PARAMS[$key]="${USER_PARAMS[$key]}"
+        echo "  -> User override: $key = ${USER_PARAMS[$key]}"
+    done
+fi
+
+# --- Finalize Job Name ---
+if [ "$USER_REQUESTED_JUPYTER" = true ]; then
+    NAME="jupyter_lab"
+elif [ ! -z "$USER_SPECIFIED_NAME" ]; then
+    NAME="$USER_SPECIFIED_NAME"
+elif [ ! -z "$USER_SCRIPT_PATH" ]; then
+    SCRIPT_BASENAME=$(basename "$USER_SCRIPT_PATH")
+    SCRIPT_NAME_WITHOUT_EXT="${SCRIPT_BASENAME%.*}"
+    NAME="${SCRIPT_NAME_WITHOUT_EXT}_$(date +%Y%m%d_%H%M%S)"
+else
+    NAME="job_$(date +%Y%m%d_%H%M%S)"
+fi
+SBATCH_PARAMS[job_name]="$NAME"
+echo "Final job name set to: $NAME"
+
+# --- Determine Script to Execute ---
+if [ "$USER_REQUESTED_JUPYTER" = true ]; then
+    SCRIPT_TO_EXECUTE_IN_WRAP="$SCRIPT_DIR/launch-jupyter.sh"
+    ARGS_FOR_SCRIPT_IN_WRAP=""
+    COMMAND_PREFIX_FOR_SCRIPT_IN_WRAP=""
+else
+    SCRIPT_TO_EXECUTE_IN_WRAP="$USER_SCRIPT_PATH"
+    ARGS_FOR_SCRIPT_IN_WRAP="$USER_SCRIPT_ARGS"
+    SCRIPT_EXT="${SCRIPT_TO_EXECUTE_IN_WRAP##*.}"
+    SCRIPT_EXT_NO_DOT="${SCRIPT_EXT#.}"
+    
+    COMMAND_PREFIX_FOR_SCRIPT_IN_WRAP="${EXECUTION_COMMANDS[$SCRIPT_EXT_NO_DOT]}"
+fi
+echo "Job will execute: $COMMAND_PREFIX_FOR_SCRIPT_IN_WRAP $SCRIPT_TO_EXECUTE_IN_WRAP $ARGS_FOR_SCRIPT_IN_WRAP"
+
+# --- Finalize Log Folder ---
+if [ -z "$LOG_FOLDER" ]; then
+    if [ "$USER_REQUESTED_JUPYTER" = true ]; then
+        # Default log folder logic can also be moved to config, but this is safe
+        LOG_FOLDER="${DEFAULT_LOG_FOLDER:-$HOME/sbatch_logs}"
+    else
+        LOG_FOLDER="$(dirname "$USER_SCRIPT_PATH")/sbatch_logs"
+    fi
+fi
+mkdir -p "$LOG_FOLDER"
+SBATCH_PARAMS[output]="$LOG_FOLDER/$NAME.out"
+SBATCH_PARAMS[error]="$LOG_FOLDER/$NAME.err"
+echo "Logs will be written to: $LOG_FOLDER"
+
+# --- Build the --wrap command string ---
+if [ -z "$ENV" ]; then # Use default from config if not provided by user
+    ENV="${DEFAULT_CONDA_ENV:-base}"
+fi
+
+WRAP_CONTENT_STR="source $SOURCE_FILE"
+if [ "$ENV" != "base" ]; then
+    WRAP_CONTENT_STR="$WRAP_CONTENT_STR && conda activate $ENV"
+fi
+
+if [ "$USER_REQUESTED_JUPYTER" = true ]; then
+    WRAP_CONTENT_STR="$WRAP_CONTENT_STR && export JUPYTER_CONDA_ENV='$ENV'"
+    WRAP_CONTENT_STR="$WRAP_CONTENT_STR && export JUPYTER_LOGDIR='$LOG_FOLDER'"
+    WRAP_CONTENT_STR="$WRAP_CONTENT_STR && export JUPYTER_ROOT='$JUPYTER_ROOT_DIR'"
+fi
+
+EXEC_PART_FOR_WRAP="$COMMAND_PREFIX_FOR_SCRIPT_IN_WRAP $SCRIPT_TO_EXECUTE_IN_WRAP $ARGS_FOR_SCRIPT_IN_WRAP"
+EXEC_PART_FOR_WRAP=$(echo "$EXEC_PART_FOR_WRAP" | awk '{$1=$1;print}')
+WRAP_CONTENT_STR="$WRAP_CONTENT_STR && $EXEC_PART_FOR_WRAP"
+
+# --- Build and Execute the Final sbatch Command ---
+SBATCH_COMMAND_ARRAY=("sbatch")
+for key in "${!SBATCH_PARAMS[@]}"; do
+    sbatch_key_name="${key//_/-}"
+    SBATCH_COMMAND_ARRAY+=("--$sbatch_key_name=${SBATCH_PARAMS[$key]}")
+done
+if [ ${#SBATCH_MISC_FLAGS[@]} -gt 0 ]; then
+    SBATCH_COMMAND_ARRAY+=("${SBATCH_MISC_FLAGS[@]}")
+fi
+SBATCH_COMMAND_ARRAY+=("--wrap" "$WRAP_CONTENT_STR")
+
+# Construct the command string for printing and potential remote execution
+CMD_STRING_FOR_PRINT_AND_SSH=""
+for arg_idx in "${!SBATCH_COMMAND_ARRAY[@]}"; do
+    arg="${SBATCH_COMMAND_ARRAY[$arg_idx]}"
+    if [[ "${SBATCH_COMMAND_ARRAY[$((arg_idx-1))]:-}" == "--wrap" ]]; then
+        CMD_STRING_FOR_PRINT_AND_SSH+="\"$arg\" "
+    else
+        CMD_STRING_FOR_PRINT_AND_SSH+="$(printf '%q' "$arg") "
+    fi
+done
+
+echo "-----------------------------------------------------"
+echo "Final sbatch command to be submitted:"
+echo "$CMD_STRING_FOR_PRINT_AND_SSH"
+echo "-----------------------------------------------------"
+
+if [ "$DRY_RUN" = true ]; then
+    echo "[DRY RUN] Command would be submitted but execution is skipped."
+    exit 0
+fi
+
+ACTUAL_SUBMIT_NODE=$(hostname)
+if [ ! -z "$SUBMIT_FROM" ]; then
+    echo "Submitting job from remote node: $SUBMIT_FROM (current node is $ACTUAL_SUBMIT_NODE)..."
+    ssh "$SUBMIT_FROM" "$CMD_STRING_FOR_PRINT_AND_SSH"
+else
+    echo "Submitting job from current node ($ACTUAL_SUBMIT_NODE)..."
+    "${SBATCH_COMMAND_ARRAY[@]}"
+fi
+
+# --- Post-submission Instructions ---
+if [ "$USER_REQUESTED_JUPYTER" = true ]; then
+    echo ""
+    echo "===== JUPYTER LAB JOB SUBMITTED ====="
+    echo "Once the job is running, run 'get-jupyter-url' to find the Jupyter session URL."
+    echo "======================================"
+fi
