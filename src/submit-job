@@ -6,21 +6,23 @@ show_help() {
 submit-job - Submit SLURM batch jobs using a Bash configuration file.
 
 USAGE:
-    submit-job [OPTIONS]
+    submit-job [OPTIONS] [SCRIPT]
 
 MODES:
     submit-job --jupyter             Start a Jupyter Lab job
-    submit-job --script path/to/script.py [--args "script arguments"]
+    submit-job --nf-tower            Start a Nextflow Tower job
+    submit-job path/to/script.py     Submit a script (Python, R, Bash, etc.)
 
 OPTIONS:
-    --script PATH                    Path to the script to execute (required unless --jupyter)
-    --jupyter                        Start a Jupyter Lab job (uses launch-jupyter.sh)
+    --jupyter                        Start a Jupyter Lab job
+    --nf-tower                       Start a Nextflow Tower job (uses start-tower.sh)
     --profiles "p1,p2"               Comma or space-separated list of configuration profiles
     --args "ARGUMENTS"               Arguments to pass to the script
     --name NAME                      Custom job name (default: auto-generated from script name)
     --env ENV_NAME                   Conda environment to activate (overrides config default)
     --log_folder PATH                Custom log folder (overrides config default)
     --submit_from NODE               Submit job from specific node (e.g., login04)
+    --dry-run                        Print the sbatch command without submitting
     
 SBATCH PARAMETERS:
     Any sbatch parameter can be specified and will override any defaults or profiles.
@@ -34,17 +36,20 @@ EXAMPLES:
     # Start Jupyter Lab on a GPU partition
     submit-job --jupyter --partition=hpc_a10_a
 
+    # Start Nextflow Tower
+    submit-job --nf-tower --partition=hpc
+
     # Run a Python script on a CPU partition
-    submit-job --script my_analysis.py --partition=hpc
+    submit-job my_analysis.py --partition=hpc
 
     # Run a script with a specific profile and custom name
-    submit-job --script process.py --partition=cao_bigmem --profiles "long_run" --name "long_process"
+    submit-job process.py --partition=cao_bigmem --profiles "long_run" --name "long_process"
     
     # Override a profile setting with a command-line argument
-    submit-job --script train.py --partition=hpc_a10_a --profiles "gpu" --gpus="a10:2"
+    submit-job train.py --partition=hpc_a10_a --profiles "gpu" --gpus="a10:2"
 
 CONFIG:
-    This script is configured using 'config/submit_job_config.sh'.
+    This script is configured using 'config/user_configs.sh' (if present) or 'config/default_configs.sh'.
 EOF
 }
 
@@ -73,6 +78,7 @@ USER_SCRIPT_ARGS=""
 USER_SPECIFIED_NAME=""
 USER_SPECIFIED_PROFILES=""
 USER_REQUESTED_JUPYTER=false
+USER_REQUESTED_TOWER=false
 DRY_RUN=false
 SUBMIT_FROM=""
 
@@ -84,8 +90,8 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --help|-h) show_help; exit 0 ;;
         --dry-run) DRY_RUN=true; shift ;;
-        --script) USER_SCRIPT_PATH="$(realpath "$2")"; shift 2 ;;
         --jupyter) USER_REQUESTED_JUPYTER=true; shift ;;
+        --nf-tower) USER_REQUESTED_TOWER=true; shift ;;
         --args|--args=*)
             if [[ $1 == *"="* ]]; then USER_SCRIPT_ARGS="${1#*=}"; shift; else USER_SCRIPT_ARGS="$2"; shift 2; fi ;;
         --name|--name=*)
@@ -118,7 +124,13 @@ while [[ $# -gt 0 ]]; do
                     SBATCH_MISC_FLAGS+=("$1"); shift
                 fi
             else
-                echo "Warning: Unrecognized argument '$1' will be ignored." >&2; shift
+                # Assume it's the script path if we haven't found one yet
+                if [[ -z "$USER_SCRIPT_PATH" ]]; then
+                    USER_SCRIPT_PATH="$(realpath "$1")"
+                    shift
+                else
+                    echo "Warning: Unrecognized argument or extra script path '$1' will be ignored." >&2; shift
+                fi
             fi ;;
     esac
 done
@@ -127,8 +139,8 @@ done
 if [[ -z "${USER_PARAMS[partition]:-}" ]]; then
     echo "Error: --partition must be specified." >&2; exit 1
 fi
-if [ "$USER_REQUESTED_JUPYTER" = false ] && [ -z "$USER_SCRIPT_PATH" ]; then
-    echo "Error: --script must be specified if not running in --jupyter mode." >&2; exit 1
+if [ "$USER_REQUESTED_JUPYTER" = false ] && [ "$USER_REQUESTED_TOWER" = false ] && [ -z "$USER_SCRIPT_PATH" ]; then
+    echo "Error: A script path, --jupyter, or --nf-tower must be specified." >&2; exit 1
 fi
 
 # --- Load Configuration and Apply Layers ---
@@ -193,6 +205,8 @@ fi
 # --- Finalize Job Name ---
 if [ "$USER_REQUESTED_JUPYTER" = true ]; then
     NAME="jupyter_lab"
+elif [ "$USER_REQUESTED_TOWER" = true ]; then
+    NAME="nf_tower"
 elif [ ! -z "$USER_SPECIFIED_NAME" ]; then
     NAME="$USER_SPECIFIED_NAME"
 elif [ ! -z "$USER_SCRIPT_PATH" ]; then
@@ -210,6 +224,10 @@ if [ "$USER_REQUESTED_JUPYTER" = true ]; then
     SCRIPT_TO_EXECUTE_IN_WRAP="$SCRIPT_DIR/launch-jupyter.sh"
     ARGS_FOR_SCRIPT_IN_WRAP=""
     COMMAND_PREFIX_FOR_SCRIPT_IN_WRAP=""
+elif [ "$USER_REQUESTED_TOWER" = true ]; then
+    SCRIPT_TO_EXECUTE_IN_WRAP="$SCRIPT_DIR/start-tower.sh"
+    ARGS_FOR_SCRIPT_IN_WRAP=""
+    COMMAND_PREFIX_FOR_SCRIPT_IN_WRAP=""
 else
     SCRIPT_TO_EXECUTE_IN_WRAP="$USER_SCRIPT_PATH"
     ARGS_FOR_SCRIPT_IN_WRAP="$USER_SCRIPT_ARGS"
@@ -222,7 +240,7 @@ echo "Job will execute: $COMMAND_PREFIX_FOR_SCRIPT_IN_WRAP $SCRIPT_TO_EXECUTE_IN
 
 # --- Finalize Log Folder ---
 if [ -z "$LOG_FOLDER" ]; then
-    if [ "$USER_REQUESTED_JUPYTER" = true ]; then
+    if [ "$USER_REQUESTED_JUPYTER" = true ] || [ "$USER_REQUESTED_TOWER" = true ]; then
         # Default log folder logic can also be moved to config, but this is safe
         LOG_FOLDER="${DEFAULT_LOG_FOLDER:-$HOME/sbatch_logs}"
     else
