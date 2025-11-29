@@ -1,13 +1,3 @@
-raw_data/*
-!raw_data/.gitkeep
-
-results/*
-!results/.gitkeep
-
-intermediate_files
-intermediate_files/*
-deprecated/*
-
 *.log
 *.log.*
 *.err
@@ -18,4 +8,4 @@ deprecated/*
 
 **/sbatch_logs/
 config/user_configs.sh
-config/tower_settings.sh
+config/cao_default_configs.sh
