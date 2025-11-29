@@ -19,12 +19,14 @@ EXECUTION_COMMANDS[nf]="nextflow run"
 # --- Jupyter Settings ---
 JUPYTER_CONDA_ENV="jupyter"
 JUPYTER_ROOT_DIR="$HOME"
+JUPYTER_PROFILES="one_cpu"
 
 # --- Nextflow Tower Settings ---
 TOWER_ACCESS_TOKEN=""
 TOWER_CONNECTION_ID=""
 TOWER_WORK_DIR="$HOME/nextflow/work"
 TOWER_AGENT_BIN="$HOME/tw-agent"
+TOWER_PROFILES="one_cpu"
 
 # --- SBATCH Defaults (Base) ---
 # Applied to every job unless overridden
@@ -43,6 +45,7 @@ PROFILES[gpu]="cpus-per-task=4 gpus=a10:1"
 PROFILES[big_mem]="mem=256G"
 PROFILES[long_run]="time=48:00:00"
 PROFILES[cao_account]="account=cao_condo_bank"
+PROFILES[one_cpu]="cpus-per-task=1"
 
 # --- Partition Rules ---
 # Automatically apply profiles based on partition name (glob patterns allowed)

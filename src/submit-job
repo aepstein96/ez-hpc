@@ -173,8 +173,23 @@ echo "Checking for user-specified profiles..."
 # Convert commas to spaces
 USER_PROFILES_STR="${USER_SPECIFIED_PROFILES//,/ }"
 
+# Layer 2.5: Apply job-type specific default profiles (Jupyter/Tower)
+# These are applied AFTER partition defaults but BEFORE user specified profiles
+JOB_TYPE_PROFILES_STR=""
+if [ "$USER_REQUESTED_JUPYTER" = true ]; then
+    if [ -n "$JUPYTER_PROFILES" ]; then
+        JOB_TYPE_PROFILES_STR="${JUPYTER_PROFILES//,/ }"
+        echo "Including default Jupyter profiles: $JOB_TYPE_PROFILES_STR"
+    fi
+elif [ "$USER_REQUESTED_TOWER" = true ]; then
+    if [ -n "$TOWER_PROFILES" ]; then
+        JOB_TYPE_PROFILES_STR="${TOWER_PROFILES//,/ }"
+        echo "Including default Tower profiles: $JOB_TYPE_PROFILES_STR"
+    fi
+fi
+
 # Combine all profiles into one list
-ALL_PROFILES_STR="$PARTITION_PROFILES_STR $USER_PROFILES_STR"
+ALL_PROFILES_STR="$PARTITION_PROFILES_STR $JOB_TYPE_PROFILES_STR $USER_PROFILES_STR"
 
 # Apply profiles in order
 for profile in $ALL_PROFILES_STR; do
