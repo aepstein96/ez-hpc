@@ -18,3 +18,4 @@ deprecated/*
 
 **/sbatch_logs/
 config/user_configs.sh
+config/tower_settings.sh

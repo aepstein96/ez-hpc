@@ -46,13 +46,13 @@ If you prefer to set things up manually:
 ### Submit a Script
 Submit a Python, R, or Bash script to the cluster.
 ```bash
-submit-job --script analysis.py --partition=general
+submit-job --script analysis.py --partition=YOUR_PARTITION
 ```
 
 ### Apply a Profile
 Use a pre-defined profile from your config (e.g., for extra memory).
 ```bash
-submit-job --script analysis.R --partition=general --profiles "big_mem"
+submit-job --script analysis.R --partition=YOUR_PARTITION --profiles "big_mem"
 ```
 
 ### Launch Jupyter Lab
@@ -68,14 +68,14 @@ get-jupyter-url
 ### Launch Nextflow Tower Agent
 Start a specific Nextflow Tower (Seqera Platform) agent on a compute node.
 ```bash
-submit-job --nf-tower --partition=general
+submit-job --nf-tower --partition=YOUR_PARTITION
 ```
 *Requires Tower configuration in `config/user_configs.sh`.*
 
 ### Pass Arguments
 Pass arguments to your script.
 ```bash
-submit-job --script train.py --partition=gpu --args "--epochs 50 --batch-size 32"
+submit-job --script train.py --partition=YOUR_PARTITION --args "--epochs 50 --batch-size 32"
 ```
 
 ## Configuration
