@@ -15,7 +15,7 @@ Most of this code was written using AI, albeit with significant human input and 
 ### 1. Clone the Repository
 Clone this repository to your home directory (or any preferred location).
 ```bash
-git clone https://github.com/yourusername/ez-hpc.git
+git clone git clone git@github.com:aepstein96/ez-hpc
 cd ez-hpc
 ```
 
