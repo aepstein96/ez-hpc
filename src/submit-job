@@ -45,7 +45,6 @@ EXAMPLES:
 
 CONFIG:
     This script is configured using 'config/submit_job_config.sh'.
-    It does NOT require 'jq'.
 EOF
 }
 
