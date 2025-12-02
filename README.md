@@ -13,7 +13,7 @@
 ### 1. Clone the Repository
 Clone this repository to your home directory (or any preferred location).
 ```bash
-git clone https://github.com/yourusername/ez-hpc.git
+git clone git clone git@github.com:aepstein96/ez-hpc
 cd ez-hpc
 ```
 
@@ -56,7 +56,7 @@ submit-job --script analysis.R --partition=YOUR_PARTITION --profiles "big_mem"
 ### Launch Jupyter Lab
 Start a Jupyter Lab instance on a compute node.
 ```bash
-submit-job --jupyter --partition=gpu_partition
+submit-job --jupyter --partition=YOUR_PARTITION
 ```
 Once running, get the connection URL:
 ```bash
