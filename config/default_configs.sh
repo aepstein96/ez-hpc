@@ -41,10 +41,9 @@ SBATCH_DEFAULTS[time]="24:00:00"
 # Format: "key=value key2=value2" (space separated)
 declare -A PROFILES
 PROFILES[cpu]="cpus-per-task=16"
-PROFILES[gpu]="cpus-per-task=4 gpus=a10:1"
+PROFILES[gpu]="cpus-per-task=4 gpus=1"
 PROFILES[big_mem]="mem=256G"
 PROFILES[long_run]="time=48:00:00"
-PROFILES[cao_account]="account=cao_condo_bank"
 PROFILES[one_cpu]="cpus-per-task=1"
 
 # --- Partition Rules ---
@@ -52,7 +51,6 @@ PROFILES[one_cpu]="cpus-per-task=1"
 # Format: "profile1 profile2" or "profile1,profile2"
 # Multiple profiles are applied in order.
 declare -A PARTITION_RULES
-PARTITION_RULES["cao*"]="cao_account"
-PARTITION_RULES["*a10*"]="gpu"
+PARTITION_RULES["*a100*"]="gpu"
 PARTITION_RULES["*v100*"]="gpu"
 PARTITION_RULES["*l40*"]="gpu"

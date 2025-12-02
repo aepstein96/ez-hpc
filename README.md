@@ -2,8 +2,6 @@
 
 **ez-hpc** is a collection of robust, portable Bash scripts to streamline job submission and Jupyter Lab management on SLURM clusters. It provides intelligent defaults, partition-based profiles, and easy Jupyter integration without requiring complex Python dependencies.
 
-Most of this code was written using AI, albeit with significant human input and guidance.
-
 ## Features
 - **Smart Defaults**: Automatically detects file types (.py, .R, .sh, .nf) and applies appropriate submission commands.
 - **Profile Management**: Define named profiles (e.g., `gpu`, `big_mem`) in a simple Bash config file.
